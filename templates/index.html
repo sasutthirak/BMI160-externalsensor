@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart IMU Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Roboto', sans-serif; background-color: #f0f2f5; text-align: center; margin: 0; padding: 20px; }
+
+        h1 { color: #333; margin-bottom: 5px; }
+        .status { font-size: 14px; color: #666; margin-bottom: 20px; }
+
+        /* ปุ่มควบคุม */
+        .controls { margin: 20px 0; }
+        button {
+            padding: 15px 30px; font-size: 18px; border: none; border-radius: 50px; cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s; font-weight: bold; margin: 0 10px;
+        }
+        button:active { transform: scale(0.95); }
+
+        #btnStart { background-color: #28a745; color: white; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4); }
+        #btnStop { background-color: #dc3545; color: white; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4); opacity: 0.5; pointer-events: none; }
+
+        .recording-indicator {
+            display: inline-block; width: 15px; height: 15px; background-color: #ccc; border-radius: 50%;
+            margin-right: 10px; vertical-align: middle;
+        }
+        .blink { background-color: #dc3545; animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+
+        /* การ์ดแสดงผล */
+        .grid-container {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px; max-width: 1000px; margin: 0 auto;
+        }
+        .card {
+            background: white; padding: 20px; border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+        .card-title { font-size: 18px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;}
+
+        .data-row { display: flex; justify-content: space-around; }
+        .data-item { text-align: center; }
+        .label { font-size: 14px; color: #aaa; font-weight: bold; }
+        .value { font-size: 32px; font-weight: 700; color: #333; margin: 5px 0; }
+
+        .accel .value { color: #007bff; }
+        .gyro .value { color: #ff9800; }
+
+    </style>
+</head>
+<body>
+
+    <h1>ESP32 BMI160 Monitor</h1>
+    <div class="status">
+        <span id="recDot" class="recording-indicator"></span>
+        <span id="statusText">Standby - Ready to record</span>
+    </div>
+
+    <div class="controls">
+        <button id="btnStart" onclick="startRecording()">▶ START RECORD</button>
+        <button id="btnStop" onclick="stopRecording()">⬛ STOP & SAVE CSV</button>
+    </div>
+
+    <div class="grid-container">
+        <div class="card accel">
+            <div class="card-title">Accelerometer (g)</div>
+            <div class="data-row">
+                <div class="data-item">
+                    <div class="label">X</div>
+                    <div id="ax" class="value">0.00</div>
+                </div>
+                <div class="data-item">
+                    <div class="label">Y</div>
+                    <div id="ay" class="value">0.00</div>
+                </div>
+                <div class="data-item">
+                    <div class="label">Z</div>
+                    <div id="az" class="value">0.00</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card gyro">
+            <div class="card-title">Gyroscope (deg/s)</div>
+            <div class="data-row">
+                <div class="data-item">
+                    <div class="label">X</div>
+                    <div id="gx" class="value">0.00</div>
+                </div>
+                <div class="data-item">
+                    <div class="label">Y</div>
+                    <div id="gy" class="value">0.00</div>
+                </div>
+                <div class="data-item">
+                    <div class="label">Z</div>
+                    <div id="gz" class="value">0.00</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isRecording = false;
+
+        function updateUI(recording) {
+            isRecording = recording;
+            const btnStart = document.getElementById('btnStart');
+            const btnStop = document.getElementById('btnStop');
+            const statusText = document.getElementById('statusText');
+            const recDot = document.getElementById('recDot');
+
+            if (recording) {
+                btnStart.style.opacity = "0.5";
+                btnStart.style.pointerEvents = "none";
+                btnStop.style.opacity = "1";
+                btnStop.style.pointerEvents = "auto";
+                statusText.innerText = "RECORDING DATA...";
+                statusText.style.color = "#dc3545";
+                recDot.classList.add("blink");
+            } else {
+                btnStart.style.opacity = "1";
+                btnStart.style.pointerEvents = "auto";
+                btnStop.style.opacity = "0.5";
+                btnStop.style.pointerEvents = "none";
+                statusText.innerText = "Standby - Ready to record";
+                statusText.style.color = "#666";
+                recDot.classList.remove("blink");
+            }
+        }
+
+        function startRecording() {
+            fetch('/start').then(res => {
+                if(res.ok) updateUI(true);
+            });
+        }
+
+        function stopRecording() {
+            // เมื่อกด Stop ให้ Browser ดาวน์โหลดไฟล์
+            window.location.href = '/stop';
+            // รอสักนิดแล้วรีเซ็ต UI (เพราะการโหลดไฟล์ไม่เปลี่ยนหน้า)
+            setTimeout(() => updateUI(false), 1000);
+        }
+
+        // ดึงข้อมูลทุก 100ms
+        setInterval(() => {
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    // อัปเดตตัวเลข
+                    const s = data.sensors;
+                    document.getElementById('ax').innerText = s.ax.toFixed(4);
+                    document.getElementById('ay').innerText = s.ay.toFixed(4);
+                    document.getElementById('az').innerText = s.az.toFixed(4);
+                    document.getElementById('gx').innerText = s.gx.toFixed(4);
+                    document.getElementById('gy').innerText = s.gy.toFixed(4);
+                    document.getElementById('gz').innerText = s.gz.toFixed(4);
+
+                    // ซิงค์สถานะปุ่ม (เผื่อมีการรีเฟรชหน้าจอ)
+                    if (data.recording !== isRecording) {
+                        updateUI(data.recording);
+                    }
+                });
+        }, 100);
+    </script>
+</body>
+</html>
